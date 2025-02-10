@@ -108,7 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Выходим без обработки
 
     # 🔹 Проверяем, что сообщение начинается с "/" и "teh" + номер
-    if message.startswith("/") and message[1:].startswith("teh") and message[4:].isdigit():
+    if message.startswith("$") and message[1:].startswith("teh") and message[4:].isdigit():
         pc_number = int(message[4:])
         if pc_number in PC_UUIDS:
             pc_uuid = PC_UUIDS[pc_number]
