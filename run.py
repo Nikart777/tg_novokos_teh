@@ -107,9 +107,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.warning(f"⚠ Бот получил сообщение в НЕРАЗРЕШЁННОЙ группе (ID: {chat_id}). Игнорируем.")
         return  # Выходим без обработки
 
-    # 🔹 Проверяем, что сообщение начинается с "teh" и дальше идёт число
-    if message.startswith("teh") and message[3:].isdigit():
-        pc_number = int(message[3:])
+    # 🔹 Проверяем, что сообщение начинается с "/" и "teh" + номер
+    if message.startswith("/") and message[1:].startswith("teh") and message[4:].isdigit():
+        pc_number = int(message[4:])
         if pc_number in PC_UUIDS:
             pc_uuid = PC_UUIDS[pc_number]
             logging.info(f"🖥 Перевод ПК {pc_number} (UUID: {pc_uuid}) в тех. режим")
@@ -125,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(f"❌ ПК {pc_number} не найден.", quote=False)
     else:
-        await update.message.reply_text("❌ Неверная команда. Используйте: `teh<N>`, где `N` — номер ПК.", quote=False)
+        logging.info(f"🔕 Игнорируем сообщение: {message}")
 
 # 🔹 Запуск бота
 def main():
