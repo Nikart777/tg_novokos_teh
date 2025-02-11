@@ -84,10 +84,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id  
     chat_type = update.message.chat.type  
 
-    if chat_type == "private" or chat_id != ALLOWED_GROUP_ID:
+    # ❌ Игнорируем личные сообщения
+    if chat_type == "private":
+        logging.warning(f"⚠ Бот получил ЛИЧНОЕ сообщение от {update.message.from_user.full_name}, но не ответил.")
         return  
 
-    if message.startswith("!") and message[1:].startswith("teh") and message[4:].isdigit():
+    # ❌ Игнорируем ВСЕ группы, кроме разрешённой
+    if chat_id != ALLOWED_GROUP_ID:
+        logging.warning(f"⚠ Бот получил сообщение в НЕРАЗРЕШЁННОЙ группе (ID: {chat_id}). Игнорируем.")
+        return  
+
+    # 🔹 Проверяем, что сообщение начинается с "$" и "teh" + номер
+    if message.startswith("$") and message[1:].startswith("teh") and message[4:].isdigit():
         pc_number = int(message[4:])
         if pc_number in PC_UUIDS:
             pc_uuid = PC_UUIDS[pc_number]
@@ -114,24 +122,11 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
 
 # 🔹 Функция планирования напоминаний
 async def schedule_reminders(application: Application):
-    now = datetime.datetime.now()
-    first_run = now.replace(hour=10, minute=0, second=0, microsecond=0)
-
-    if now > first_run:
-        first_run += datetime.timedelta(days=1)
-
-    while first_run.weekday() not in [0, 2, 4]:  
-        first_run += datetime.timedelta(days=1)
-
-    delay = (first_run - now).total_seconds()
-    logging.info(f"⏳ Первое напоминание через {delay / 3600:.2f} часов")
-
-    await asyncio.sleep(delay)
-
     while True:
-        if datetime.datetime.now().weekday() in [0, 2, 4]:  
+        now = datetime.datetime.now()
+        if now.weekday() in [0, 2, 4] and now.hour == 10:
             await send_reminder(application.bot)
-        await asyncio.sleep(86400)  
+        await asyncio.sleep(3600)  
 
 # 🔹 Запуск бота
 def main():
