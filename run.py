@@ -2,6 +2,8 @@ import os
 import logging
 import requests
 import json
+import asyncio
+import datetime
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -68,25 +70,10 @@ async def switch_to_tech_mode(pc_uuid):
         "uuids": [pc_uuid]
     }
 
-    json_payload = json.dumps(payload, ensure_ascii=False)
-
-    logging.info(f"📤 Отправка запроса к API: {API_URL}")
-    logging.info(f"🔑 Заголовки: {headers}")
-
-    print("\n=== ОТПРАВЛЕННЫЙ JSON В API ===")
-    print(json_payload)
-    print("================================\n")
-
     try:
         response = requests.post(API_URL, headers=headers, json=payload)
         response.raise_for_status()
-
-        response_data = response.json()
-        response_text = json.dumps(response_data, indent=2, ensure_ascii=False)
-        logging.info(f"📩 Статус ответа: {response.status_code}")
-        logging.info(f"📊 API ответ (разобранный JSON):\n{response_text}")
-
-        return response.status_code, response_data
+        return response.status_code, response.json()
     except requests.exceptions.RequestException as e:
         logging.error(f"🚨 Ошибка соединения с API: {e}")
         return 500, {"message": f"Ошибка соединения с API: {e}"}
@@ -94,44 +81,67 @@ async def switch_to_tech_mode(pc_uuid):
 # 🔹 Функция обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message.text.strip()
-    chat_id = update.message.chat_id  # ID чата (группы)
-    chat_type = update.message.chat.type  # Тип чата (private / group / supergroup)
+    chat_id = update.message.chat_id  
+    chat_type = update.message.chat.type  
 
-    # ❌ Игнорируем личные сообщения (ЛС)
-    if chat_type == "private":
-        logging.warning(f"⚠ Бот получил ЛИЧНОЕ сообщение от {update.message.from_user.full_name}, но не ответил.")
-        return  # Выходим без обработки
+    if chat_type == "private" or chat_id != ALLOWED_GROUP_ID:
+        return  
 
-    # ❌ Игнорируем ВСЕ группы, кроме одной разрешённой
-    if chat_id != ALLOWED_GROUP_ID:
-        logging.warning(f"⚠ Бот получил сообщение в НЕРАЗРЕШЁННОЙ группе (ID: {chat_id}). Игнорируем.")
-        return  # Выходим без обработки
-
-    # 🔹 Проверяем, что сообщение начинается с "/" и "teh" + номер
-    if message.startswith("$") and message[1:].startswith("teh") and message[4:].isdigit():
+    if message.startswith("!") and message[1:].startswith("teh") and message[4:].isdigit():
         pc_number = int(message[4:])
         if pc_number in PC_UUIDS:
             pc_uuid = PC_UUIDS[pc_number]
-            logging.info(f"🖥 Перевод ПК {pc_number} (UUID: {pc_uuid}) в тех. режим")
-
             status_code, response = await switch_to_tech_mode(pc_uuid)
 
             if status_code == 200 and response.get("status") is True:
                 await update.message.reply_text(f"✅ ПК {pc_number} переведён в тех. режим.", quote=False)
             else:
-                error_message = response.get("message", "Ошибка API")
-                logging.error(f"❌ Ошибка при переводе ПК {pc_number}: {error_message}")
-                await update.message.reply_text(f"❌ Ошибка: {error_message}", quote=False)
-        else:
-            await update.message.reply_text(f"❌ ПК {pc_number} не найден.", quote=False)
-    else:
-        logging.info(f"🔕 Игнорируем сообщение: {message}")
+                await update.message.reply_text(f"❌ Ошибка API: {response.get('message', 'Ошибка')}", quote=False)
+
+# 🔹 Функция для отправки напоминания в группу
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+    reminder_text = (
+        "📢 *Напоминание!*\n"
+        "Сегодня в *10:00* администратору провести уборку по плану:\n\n"
+        "✅ *Мышки, наушники* – протереть влажными салфетками 🧼\n"
+        "✅ *Мониторы* – выключить на 10 минут, затем аккуратно протереть экран специальным средством или салфетками 🖥✨\n"
+        "✅ *Клавиатуры* – продуть воздуходувкой над полом 💨⌨\n"
+        "✅ *Дверца холодильника* – протереть со средством для стекла 🧴🚪\n"
+        "✅ *Джойстики PS5* – обрабатывать после каждого клиента влажными салфетками 🎮🧽\n\n"
+        "💡 *Чистота клуба – комфорт для всех!*"
+    )
+    await context.bot.send_message(chat_id=ALLOWED_GROUP_ID, text=reminder_text, parse_mode="Markdown")
+
+# 🔹 Функция планирования напоминаний
+async def schedule_reminders(application: Application):
+    now = datetime.datetime.now()
+    first_run = now.replace(hour=10, minute=0, second=0, microsecond=0)
+
+    if now > first_run:
+        first_run += datetime.timedelta(days=1)
+
+    while first_run.weekday() not in [0, 2, 4]:  
+        first_run += datetime.timedelta(days=1)
+
+    delay = (first_run - now).total_seconds()
+    logging.info(f"⏳ Первое напоминание через {delay / 3600:.2f} часов")
+
+    await asyncio.sleep(delay)
+
+    while True:
+        if datetime.datetime.now().weekday() in [0, 2, 4]:  
+            await send_reminder(application.bot)
+        await asyncio.sleep(86400)  
 
 # 🔹 Запуск бота
 def main():
     logging.info("🚀 Запуск Telegram-бота...")
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(schedule_reminders(application))  
+
     application.run_polling()
 
 if __name__ == "__main__":
